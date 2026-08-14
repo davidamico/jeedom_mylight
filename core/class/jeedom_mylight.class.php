@@ -83,12 +83,13 @@ class jeedom_mylight extends eqLogic {
         $this->createCommand('Cagnotte', 'money_pot', 'info', 'numeric', '€');
     }
 
-    private function createCommand($name, $logicalId, $type, $subType, $unite = '') {
+private function createCommand($name, $logicalId, $type, $subType, $unite = '') {
         $cmd = $this->getCmd(null, $logicalId);
         if (!is_object($cmd)) {
             $cmd = new jeedom_mylightCmd();
             $cmd->setLogicalId($logicalId);
             $cmd->setEqLogic_id($this->getId());
+            $cmd->setEqType('jeedom_mylight'); // <-- C'EST LA LIGNE CRUCIALE QUI MANQUAIT !
             $cmd->setName($name);
             $cmd->setType($type);
             $cmd->setSubType($subType);
