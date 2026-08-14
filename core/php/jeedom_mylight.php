@@ -1,105 +1,106 @@
-
 <?php
-require_once dirname(__FILE__) . '/../../../../core/php/core.inc.php';
-require_once dirname(__FILE__) . '/mylight150_api.class.php';
-
-class jeedom_mylight extends eqLogic {
-    public static function cronHourly() {
-        foreach (eqLogic::byType('jeedom_mylight') as $eqLogic) {
-            if ($eqLogic->getIsEnable() == 1) {
-                $eqLogic->refreshData();
-            }
-        }
-    }
-
-    public function refreshData() {
-        $username = config::byKey('username', 'jeedom_mylight');
-        $password = config::byKey('password', 'jeedom_mylight');
-        if (empty($username) || empty($password)) {
-            log::add('jeedom_mylight', 'error', 'Identifiants MyLight non configurés dans la configuration globale du plugin.');
-            return;
-        }
-
-        $api = new MyLight150API($username, $password);
-        
-        // 1. Get installation code
-        $v2_data = $api->callAPI('/v2');
-        $installation_code = null;
-        if (isset($v2_data['links'])) {
-            foreach ($v2_data['links'] as $link) {
-                if ($link['rel'] == 'installation') {
-                    $parts = explode('/', rtrim($link['href'], '/'));
-                    $installation_code = end($parts);
-                    break;
-                }
-            }
-        }
-
-        if (!$installation_code) {
-            log::add('jeedom_mylight', 'error', 'Impossible de récupérer le code d\'installation.');
-            return;
-        }
-
-        // 2. Home Data (Puissances)
-        $home_data = $api->callAPI("/v2/installations/{$installation_code}/home?msb=msb01");
-        if ($home_data) {
-            $this->checkAndUpdateCmd('solar_production', isset($home_data['solarProduction']['value']) ? $home_data['solarProduction']['value'] : 0);
-            $grid_val = (isset($home_data['grid']['value']) ? $home_data['grid']['value'] : 0) - (isset($home_data['injection']['value']) ? $home_data['injection']['value'] : 0);
-            $this->checkAndUpdateCmd('grid', $grid_val);
-            $this->checkAndUpdateCmd('load', isset($home_data['load']['value']) ? $home_data['load']['value'] : 0);
-        }
-
-        // 3. Virtual Battery
-        $batt_data = $api->callAPI("/v3/virtual-battery/state");
-        if ($batt_data && isset($batt_data['status'])) {
-            $status = $batt_data['status'];
-            $this->checkAndUpdateCmd('msb_state', isset($status['state']) ? $status['state'] : 'unknown');
-            $power = isset($status['socEvolutionInkW']) ? $status['socEvolutionInkW'] : 0;
-            if(isset($status['state']) && $status['state'] == 'charging') $power = $power * -1;
-            $this->checkAndUpdateCmd('msb_power', $power);
-            $this->checkAndUpdateCmd('msb_autonomy', isset($status['socInkWh']) ? $status['socInkWh'] : 0);
-            $capacity = isset($status['capacity']) ? $status['capacity'] : 0;
-            $this->checkAndUpdateCmd('msb_capacity', $capacity);
-            if ($capacity > 0) {
-                $this->checkAndUpdateCmd('msb_level', round((isset($status['socInkWh']) ? $status['socInkWh'] : 0) / $capacity * 100, 1));
-            }
-        }
-
-        // 4. Money Pot
-        $money_data = $api->callAPI("/v3/money-pot");
-        if ($money_data && isset($money_data['payload']['balance']['value'])) {
-            $this->checkAndUpdateCmd('money_pot', $money_data['payload']['balance']['value']);
-        }
-    }
-
-    public function postSave() {
-        $this->createCommand('Production Solaire (Live)', 'solar_production', 'info', 'numeric', 'kW');
-        $this->createCommand('Réseau (Live)', 'grid', 'info', 'numeric', 'kW');
-        $this->createCommand('Consommation (Live)', 'load', 'info', 'numeric', 'kW');
-        $this->createCommand('Etat Batterie', 'msb_state', 'info', 'string');
-        $this->createCommand('Puissance Batterie', 'msb_power', 'info', 'numeric', 'kW');
-        $this->createCommand('Autonomie Batterie', 'msb_autonomy', 'info', 'numeric', 'kWh');
-        $this->createCommand('Capacité Batterie', 'msb_capacity', 'info', 'numeric', 'kWh');
-        $this->createCommand('Niveau Batterie', 'msb_level', 'info', 'numeric', '%');
-        $this->createCommand('Cagnotte', 'money_pot', 'info', 'numeric', '€');
-    }
-
-    private function createCommand($name, $logicalId, $type, $subType, $unite = '') {
-        $cmd = $this->getCmd(null, $logicalId);
-        if (!is_object($cmd)) {
-            $cmd = new jeedom_mylightCmd();
-            $cmd->setLogicalId($logicalId);
-            $cmd->setEqLogic_id($this->getId());
-            $cmd->setName($name);
-            $cmd->setType($type);
-            $cmd->setSubType($subType);
-            $cmd->setUnite($unite);
-            $cmd->save();
-        }
-    }
+if (!isConnect('admin')) {
+    throw new Exception('{{401 - Accès non autorisé}}');
 }
-
-class jeedom_mylightCmd extends cmd {
-    public function execute($_options = array()) {}
-}
+$plugin = plugin::byId('jeedom_mylight');
+sendVarToJS('eqType', $plugin->getId());
+$eqLogics = eqLogic::byType($plugin->getId());
 ?>
+
+<div class="row row-overflow">
+    <div class="col-xs-12 eqLogicThumbnailDisplay">
+        <legend><i class="fas fa-cog"></i> {{Gestion}}</legend>
+        <div class="eqLogicThumbnailContainer">
+            <div class="cursor eqLogicAction logoPrimary" data-action="add">
+                <i class="fas fa-plus-circle"></i>
+                <br>
+                <span>{{Ajouter}}</span>
+            </div>
+            <div class="cursor eqLogicAction logoSecondary" data-action="gotoPluginConf">
+                <i class="fas fa-wrench"></i>
+                <br>
+                <span>{{Configuration}}</span>
+            </div>
+        </div>
+        <legend><i class="fas fa-table"></i> {{Mes Equipements MyLight}}</legend>
+        <div class="eqLogicThumbnailContainer">
+            <?php
+            foreach ($eqLogics as $eqLogic) {
+                $opacity = ($eqLogic->getIsEnable()) ? '' : 'disableCard';
+                echo '<div class="eqLogicDisplayCard cursor '.$opacity.'" data-eqLogic_id="' . $eqLogic->getId() . '">';
+                echo '<img src="' . $plugin->getPathImgIcon() . '"/>';
+                echo '<br>';
+                echo '<span class="name">' . $eqLogic->getHumanName(true, true) . '</span>';
+                echo '</div>';
+            }
+            ?>
+        </div>
+    </div>
+
+    <div class="col-xs-12 eqLogic" style="display: none;">
+        <div class="input-group pull-right" style="display:inline-flex">
+            <span class="input-group-btn">
+                <a class="btn btn-default btn-sm eqLogicAction roundedLeft" data-action="configure"><i class="fa fa-cogs"></i> {{Configuration avancée}}</a><a class="btn btn-default btn-sm eqLogicAction" data-action="copy"><i class="fas fa-copy"></i> {{Dupliquer}}</a><a class="btn btn-sm btn-success eqLogicAction" data-action="save"><i class="fas fa-check-circle"></i> {{Sauvegarder}}</a><a class="btn btn-danger btn-sm eqLogicAction roundedRight" data-action="remove"><i class="fas fa-minus-circle"></i> {{Supprimer}}</a>
+            </span>
+        </div>
+        <ul class="nav nav-tabs" role="tablist">
+            <li role="presentation"><a href="#" class="eqLogicAction" aria-controls="home" role="tab" data-toggle="tab" data-action="returnToThumbnailDisplay"><i class="fa fa-arrow-circle-left"></i></a></li>
+            <li role="presentation" class="active"><a href="#eqlogictab" aria-controls="home" role="tab" data-toggle="tab"><i class="fas fa-tachometer-alt"></i> {{Equipement}}</a></li>
+            <li role="presentation"><a href="#commandtab" aria-controls="profile" role="tab" data-toggle="tab"><i class="fa fa-list-alt"></i> {{Commandes}}</a></li>
+        </ul>
+        <div class="tab-content" style="height:calc(100% - 50px);overflow:auto;overflow-x: hidden;">
+            <div role="tabpanel" class="tab-pane active" id="eqlogictab">
+                <br/>
+                <form class="form-horizontal">
+                    <fieldset>
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label">{{Nom de l'équipement}}</label>
+                            <div class="col-sm-3">
+                                <input type="text" class="eqLogicAttr form-control" data-l1key="id" style="display : none;" />
+                                <input type="text" class="eqLogicAttr form-control" data-l1key="name" placeholder="{{Nom de l'équipement}}"/>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label" >{{Objet parent}}</label>
+                            <div class="col-sm-3">
+                                <select id="sel_object" class="eqLogicAttr form-control" data-l1key="object_id">
+                                    <option value="">{{Aucun}}</option>
+                                    <?php
+                                    foreach (jeeObject::all() as $object) {
+                                        echo '<option value="' . $object->getId() . '">' . $object->getName() . '</option>';
+                                    }
+                                    ?>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label"></label>
+                            <div class="col-sm-9">
+                                <label class="checkbox-inline"><input type="checkbox" class="eqLogicAttr" data-l1key="isEnable" checked/>{{Activer}}</label>
+                                <label class="checkbox-inline"><input type="checkbox" class="eqLogicAttr" data-l1key="isVisible" checked/>{{Visible}}</label>
+                            </div>
+                        </div>
+                    </fieldset>
+                </form>
+            </div>
+            <div role="tabpanel" class="tab-pane" id="commandtab">
+                <br/>
+                <table id="table_cmd" class="table table-bordered table-condensed">
+                    <thead>
+                        <tr>
+                            <th>{{ID}}</th>
+                            <th>{{Nom}}</th>
+                            <th>{{Type}}</th>
+                            <th>{{Unité}}</th>
+                            <th>{{Action}}</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php include_file('desktop', 'jeedom_mylight', 'js', 'jeedom_mylight');?>
+<?php include_file('core', 'plugin.template', 'js');?>
