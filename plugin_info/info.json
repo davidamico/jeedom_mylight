@@ -1,1 +1,14 @@
-
+{
+    "id": "jeedom_mylight",
+    "name": "MyLight150",
+    "description": "Plugin permettant de récupérer les informations de votre installation solaire et batterie virtuelle MyLight150.",
+    "licence": "AGPL",
+    "author": "TheDave",
+    "require": "4.2.*",
+    "category": "energy",
+    "hasDependency": false,
+    "hasOwnDaemon": false,
+    "maxDependancyInstallTime": 0,
+    "documentation": "https://davidamico.github.io/jeedom_mylight/fr_FR/index",
+    "changelog": "https://davidamico.github.io/jeedom_mylight/fr_FR/changelog"
+}
