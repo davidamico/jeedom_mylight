@@ -3,6 +3,7 @@ require_once dirname(__FILE__) . '/../../../../core/php/core.inc.php';
 require_once dirname(__FILE__) . '/mylight150_api.class.php';
 
 class jeedom_mylight extends eqLogic {
+
     public static function cronHourly() {
         foreach (eqLogic::byType('jeedom_mylight') as $eqLogic) {
             if ($eqLogic->getIsEnable() == 1) {
@@ -14,8 +15,9 @@ class jeedom_mylight extends eqLogic {
     public function refreshData() {
         $username = config::byKey('username', 'jeedom_mylight');
         $password = config::byKey('password', 'jeedom_mylight');
+        
         if (empty($username) || empty($password)) {
-            log::add('jeedom_mylight', 'error', 'Identifiants MyLight non configurés dans la configuration globale du plugin.');
+            log::add('jeedom_mylight', 'error', 'Identifiants MyLight non configurés.');
             return;
         }
 
@@ -54,7 +56,9 @@ class jeedom_mylight extends eqLogic {
             $status = $batt_data['status'];
             $this->checkAndUpdateCmd('msb_state', isset($status['state']) ? $status['state'] : 'unknown');
             $power = isset($status['socEvolutionInkW']) ? $status['socEvolutionInkW'] : 0;
-            if(isset($status['state']) && $status['state'] == 'charging') $power = $power * -1;
+            if(isset($status['state']) && $status['state'] == 'charging') {
+                $power = $power * -1;
+            }
             $this->checkAndUpdateCmd('msb_power', $power);
             $this->checkAndUpdateCmd('msb_autonomy', isset($status['socInkWh']) ? $status['socInkWh'] : 0);
             $capacity = isset($status['capacity']) ? $status['capacity'] : 0;
@@ -72,9 +76,9 @@ class jeedom_mylight extends eqLogic {
     }
 
     public function postSave() {
-        $this->createCommand('Production Solaire (Live)', 'solar_production', 'info', 'numeric', 'kW');
-        $this->createCommand('Réseau (Live)', 'grid', 'info', 'numeric', 'kW');
-        $this->createCommand('Consommation (Live)', 'load', 'info', 'numeric', 'kW');
+        $this->createCommand('Production Solaire', 'solar_production', 'info', 'numeric', 'kW');
+        $this->createCommand('Réseau', 'grid', 'info', 'numeric', 'kW');
+        $this->createCommand('Consommation', 'load', 'info', 'numeric', 'kW');
         $this->createCommand('Etat Batterie', 'msb_state', 'info', 'string');
         $this->createCommand('Puissance Batterie', 'msb_power', 'info', 'numeric', 'kW');
         $this->createCommand('Autonomie Batterie', 'msb_autonomy', 'info', 'numeric', 'kWh');
@@ -83,13 +87,13 @@ class jeedom_mylight extends eqLogic {
         $this->createCommand('Cagnotte', 'money_pot', 'info', 'numeric', '€');
     }
 
-private function createCommand($name, $logicalId, $type, $subType, $unite = '') {
+    private function createCommand($name, $logicalId, $type, $subType, $unite = '') {
         $cmd = $this->getCmd(null, $logicalId);
         if (!is_object($cmd)) {
             $cmd = new jeedom_mylightCmd();
             $cmd->setLogicalId($logicalId);
             $cmd->setEqLogic_id($this->getId());
-            $cmd->setEqType('jeedom_mylight'); // <-- C'EST LA LIGNE CRUCIALE QUI MANQUAIT !
+            $cmd->setEqType('jeedom_mylight');
             $cmd->setName($name);
             $cmd->setType($type);
             $cmd->setSubType($subType);
@@ -100,6 +104,8 @@ private function createCommand($name, $logicalId, $type, $subType, $unite = '') 
 }
 
 class jeedom_mylightCmd extends cmd {
-    public function execute($_options = array()) {}
+    public function execute($_options = array()) {
+        // Réservé pour de futures actions (ex: forcer la charge de la batterie)
+    }
 }
 ?>
